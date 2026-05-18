@@ -29,11 +29,11 @@ HEADERS = {"User-Agent": "Mozilla/5.0", "Referer": "https://www.gaokao.cn/"}
 # 建议改为从环境变量读取，避免明文密码
 def make_conn():
     return clickzetta.connect(
-        service=os.environ.get("CZ_SERVICE", "https://cn-shanghai-alicloud.api.clickzetta.com"),
-        instance=os.environ.get("CZ_INSTANCE", "f8866243"),
-        workspace=os.environ.get("CZ_WORKSPACE", "quick_start"),
-        username=os.environ.get("CZ_USERNAME", "qiliang"),
-        password=os.environ.get("CZ_PASSWORD", "Ql123456!"),
+        service=os.environ["CZ_SERVICE"],
+        instance=os.environ["CZ_INSTANCE"],
+        workspace=os.environ["CZ_WORKSPACE"],
+        username=os.environ["CZ_USERNAME"],
+        password=os.environ["CZ_PASSWORD"],
         vcluster=os.environ.get("CZ_VCLUSTER", "default"),
         schema="gaokao_assistant",
     )

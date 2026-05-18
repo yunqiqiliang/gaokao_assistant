@@ -42,6 +42,7 @@
 import urllib.request, json, csv, time, os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
+import os
 import clickzetta
 
 LOG = '/tmp/gaokao_repair.log'
@@ -78,14 +79,12 @@ def log(msg):
         f.write(line + '\n')
 
 def make_conn():
-    # 建议将敏感参数改为从环境变量读取，例如：
-    # import os
-    # username = os.environ['CZ_USERNAME']
-    # password = os.environ['CZ_PASSWORD']
     return clickzetta.connect(
-        service='https://cn-shanghai-alicloud.api.clickzetta.com',
-        instance='f8866243', workspace='quick_start',
-        username='qiliang', password='Ql123456!',
+        service=os.environ['CZ_SERVICE'],
+        instance=os.environ['CZ_INSTANCE'],
+        workspace=os.environ['CZ_WORKSPACE'],
+        username=os.environ['CZ_USERNAME'],
+        password=os.environ['CZ_PASSWORD'],
         vcluster='default', schema='gaokao_assistant'
     )
 
