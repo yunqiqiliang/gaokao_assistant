@@ -211,10 +211,103 @@ python3 scripts/scraper.py
 
 ---
 
-## 七、年度更新（每年高考录取结束后）
+## 七、年度更新（以 2025 年为例）
 
-1. 修改 scraper.py 中的年份范围，加入新年份（如 2025）
-2. 删除断点文件，重跑 scraper.py（或只采新年份）
-3. 重跑 repair.py 补全
-4. 重跑 dim_school_scraper.py 更新排名数据（软科排名每年更新）
-5. 更新 README.md 中的数据规模数字
+每年高考录取结束后（通常 9 月底），gaokao.cn 会陆续放出新一年的录取数据。以下以补采 2025 年数据为例。
+
+### 步骤 1：确认数据已上线
+
+先验证 API 是否已有 2025 年数据，再开始采集：
+
+```python
+import urllib.request, json
+
+url = "https://static-data.gaokao.cn/www/2.0/schoolspecialscore/140/2025/11.json"
+req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://gaokao.cn/"})
+with urllib.request.urlopen(req, timeout=10) as resp:
+    data = json.loads(resp.read())
+
+items = list(data.get("data", {}).values())
+cnt = sum(len(v.get("item", [])) for v in items if isinstance(v, dict))
+print(f"code={data.get('code')}  条数={cnt}")
+# code=0000 且 cnt>0 说明数据已上线，可以开始采集
+# code=0000 但 cnt=0，或 HTTP 404，说明数据还未放出
+```
+
+### 步骤 2：修改年份配置
+
+编辑 `scripts/scraper.py` 第 61 行，加入 2025：
+
+```python
+# 修改前
+YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+
+# 修改后
+YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
+```
+
+同样修改 `scripts/repair.py` 中相同的 `YEARS` 常量（搜索 `YEARS =` 找到对应行）。
+
+### 步骤 3：只采新年份（推荐，避免重复采集历史数据）
+
+断点文件已记录了历史年份的完成状态，直接重跑 scraper.py 会自动跳过已完成的组合，只采 2025 年的新数据：
+
+```bash
+export $(cat .env | xargs)
+python3 scripts/scraper.py
+# 输出示例：
+# 断点: 已完成 xxxxxx 个组合，继续采集
+# 待处理任务: ~86,000 个（2784所 × 31省 × 1年）
+```
+
+耗时约 1-2 小时（只采一年，比全量快很多）。
+
+### 步骤 4：补全漏采数据
+
+```bash
+python3 scripts/repair.py
+```
+
+### 步骤 5：更新维度表排名数据
+
+软科排名、QS 排名等每年更新，重跑维度采集脚本：
+
+```bash
+python3 scripts/dim_school_scraper.py
+```
+
+> 注意：dim_school_scraper.py 会 DROP + CREATE 三张维度表，原有数据会被覆盖，这是正常的。
+
+### 步骤 6：验证新数据
+
+```sql
+-- 确认 2025 年数据已入库
+SELECT COUNT(*) AS 记录数, COUNT(DISTINCT school_id) AS 学校数,
+       COUNT(DISTINCT province_id) AS 省份数
+FROM gaokao_assistant.fact_admission_history
+WHERE year = 2025;
+
+-- 对比各年数据量，确认 2025 年规模合理
+SELECT year, COUNT(*) AS 记录数
+FROM gaokao_assistant.fact_admission_history
+GROUP BY year ORDER BY year;
+```
+
+2025 年记录数应与 2024 年接近（误差在 ±20% 以内为正常）。
+
+### 步骤 7：更新文档
+
+修改 `README.md` 中的数据规模表格，将年份范围从 2018–2024 改为 2018–2025，更新总记录数。
+
+---
+
+## 八、常用脚本速查
+
+| 场景 | 命令 |
+|------|------|
+| 全量采集（首次） | `python3 scripts/scraper.py` |
+| 断点续采 | `python3 scripts/scraper.py`（直接重跑，自动跳过已完成） |
+| 补全漏采 | `python3 scripts/repair.py` |
+| 更新维度表 | `python3 scripts/dim_school_scraper.py` |
+| 补采新年份 | 修改 YEARS 常量后重跑 `scraper.py` |
+| 重置断点（从头全采） | `rm /tmp/gaokao_done_keys.txt && python3 scripts/scraper.py` |
