@@ -234,23 +234,16 @@ print(f"code={data.get('code')}  条数={cnt}")
 # code=0000 但 cnt=0，或 HTTP 404，说明数据还未放出
 ```
 
-### 步骤 2：只采新年份（推荐）
+### 步骤 2：采集新年份数据
 
-通过 `--years` 参数指定只采 2025 年，断点机制会自动跳过历史年份，无需修改代码：
+通过 `--years` 参数指定只采 2025 年，无需修改代码，断点机制自动跳过历史年份：
 
 ```bash
 export $(cat .env | xargs)
-
-# 只采集 2025 年
 python3 scripts/scraper.py --years 2025
-
-# 输出示例：
-# 学校: 2784 所，年份: [2025]，省份: 31
-# 断点: 已完成 xxxxxx 个组合，继续采集
-# 待处理任务: ~86,000 个（2784所 × 31省 × 1年）
 ```
 
-耗时约 1-2 小时（只采一年，比全量快很多）。
+耗时约 1-2 小时（只采一年）。
 
 ### 步骤 3：补全漏采数据
 
@@ -258,37 +251,41 @@ python3 scripts/scraper.py --years 2025
 python3 scripts/repair.py --years 2025
 ```
 
-### 步骤 5：更新维度表排名数据 + 同步注释
+### 步骤 4：更新维度表 + 自动同步所有表注释
 
-软科排名、QS 排名等每年更新，重跑维度采集脚本。**脚本运行完成后会自动更新所有表的注释**（含最新行数），无需手动操作：
+软科排名、QS 排名等每年更新，重跑维度采集脚本。**脚本完成后会自动查询各表真实行数，更新全部 5 张表的注释**，无需手动操作：
 
 ```bash
 python3 scripts/dim_school_scraper.py
-# 完成后输出：表注释已同步更新（含最新行数）
+# 最后一行输出：表注释已同步更新（含最新行数）
 ```
 
 > 注意：dim_school_scraper.py 会 DROP + CREATE 三张维度表，原有数据会被覆盖，这是正常的。
 
-### 步骤 6：验证新数据
+### 步骤 5：验证新数据
 
 ```sql
--- 确认 2025 年数据已入库
-SELECT COUNT(*) AS 记录数, COUNT(DISTINCT school_id) AS 学校数,
-       COUNT(DISTINCT province_id) AS 省份数
-FROM gaokao_assistant.fact_admission_history
-WHERE year = 2025;
-
--- 对比各年数据量，确认 2025 年规模合理
-SELECT year, COUNT(*) AS 记录数
+-- 确认 2025 年数据已入库，规模与上一年接近（±20% 为正常）
+SELECT year, COUNT(*) AS 记录数, COUNT(DISTINCT school_id) AS 学校数
 FROM gaokao_assistant.fact_admission_history
 GROUP BY year ORDER BY year;
 ```
 
-2025 年记录数应与 2024 年接近（误差在 ±20% 以内为正常）。
+### 步骤 6：更新 README
 
-### 步骤 7：更新文档
+修改 `README.md` 中的年份范围（2018–2024 → 2018–2025）和总记录数。表注释已由步骤 4 自动更新，无需手动改。
 
-修改 `README.md` 中的数据规模表格，将年份范围从 2018–2024 改为 2018–2025，更新总记录数。
+---
+
+**完整命令汇总（复制即用）：**
+
+```bash
+export $(cat .env | xargs)
+python3 scripts/scraper.py --years 2025
+python3 scripts/repair.py --years 2025
+python3 scripts/dim_school_scraper.py   # 同时更新维度表和所有表注释
+# 最后手动更新 README.md 的年份范围和总记录数
+```
 
 ---
 
