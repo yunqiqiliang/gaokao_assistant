@@ -182,7 +182,7 @@ def main():
             try:
                 rank = int(row['全国热度排名'])
                 sid = row['学校抓取编码'].strip()
-                if sid and rank <= 500:
+                if sid:  # 全量2784所
                     schools.append(sid)
             except:
                 pass

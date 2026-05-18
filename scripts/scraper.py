@@ -149,7 +149,7 @@ with open('/tmp/university_info.csv', 'r') as f:
         try:
             rank = int(row['全国热度排名'])
             sid = row['学校抓取编码'].strip()
-            if sid and rank <= 500:
+            if sid:  # 全量2784所
                 schools.append((rank, sid, row['学校'].strip()))
         except: pass
 schools.sort()
