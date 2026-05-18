@@ -1,0 +1,14 @@
+# 高考数据采集脚本依赖
+
+# ClickZetta Lakehouse Python 连接器
+# 用于连接 ClickZetta 云数仓，执行 SQL 写入数据
+clickzetta-connector>=0.1.0
+
+# 以下为 Python 标准库，无需额外安装：
+# urllib.request  - HTTP 请求（采集 API 数据）
+# json            - JSON 解析
+# csv             - 读取学校列表 CSV 文件
+# time            - 时间戳和计时
+# os              - 文件路径操作
+# concurrent.futures - 多线程并行采集
+# collections     - Counter（repair.py 统计缺失数量）
