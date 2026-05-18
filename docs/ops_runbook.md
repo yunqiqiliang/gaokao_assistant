@@ -234,38 +234,28 @@ print(f"code={data.get('code')}  条数={cnt}")
 # code=0000 但 cnt=0，或 HTTP 404，说明数据还未放出
 ```
 
-### 步骤 2：修改年份配置
+### 步骤 2：只采新年份（推荐）
 
-编辑 `scripts/scraper.py` 第 61 行，加入 2025：
-
-```python
-# 修改前
-YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
-
-# 修改后
-YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
-```
-
-同样修改 `scripts/repair.py` 中相同的 `YEARS` 常量（搜索 `YEARS =` 找到对应行）。
-
-### 步骤 3：只采新年份（推荐，避免重复采集历史数据）
-
-断点文件已记录了历史年份的完成状态，直接重跑 scraper.py 会自动跳过已完成的组合，只采 2025 年的新数据：
+通过 `--years` 参数指定只采 2025 年，断点机制会自动跳过历史年份，无需修改代码：
 
 ```bash
 export $(cat .env | xargs)
-python3 scripts/scraper.py
+
+# 只采集 2025 年
+python3 scripts/scraper.py --years 2025
+
 # 输出示例：
+# 学校: 2784 所，年份: [2025]，省份: 31
 # 断点: 已完成 xxxxxx 个组合，继续采集
 # 待处理任务: ~86,000 个（2784所 × 31省 × 1年）
 ```
 
 耗时约 1-2 小时（只采一年，比全量快很多）。
 
-### 步骤 4：补全漏采数据
+### 步骤 3：补全漏采数据
 
 ```bash
-python3 scripts/repair.py
+python3 scripts/repair.py --years 2025
 ```
 
 ### 步骤 5：更新维度表排名数据
@@ -309,5 +299,5 @@ GROUP BY year ORDER BY year;
 | 断点续采 | `python3 scripts/scraper.py`（直接重跑，自动跳过已完成） |
 | 补全漏采 | `python3 scripts/repair.py` |
 | 更新维度表 | `python3 scripts/dim_school_scraper.py` |
-| 补采新年份 | 修改 YEARS 常量后重跑 `scraper.py` |
+| 补采新年份 | `python3 scripts/scraper.py --years 2025` |
 | 重置断点（从头全采） | `rm /tmp/gaokao_done_keys.txt && python3 scripts/scraper.py` |

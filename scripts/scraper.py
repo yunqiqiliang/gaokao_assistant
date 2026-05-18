@@ -39,9 +39,8 @@
     - 建议将连接参数改为从环境变量读取（见 make_conn 函数注释）
 ========================================
 """
-import urllib.request, json, csv, time, os
+import urllib.request, json, csv, time, os, argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import os
 import clickzetta
 
 LOG = '/tmp/gaokao_scraper.log'
@@ -58,7 +57,7 @@ PROVINCES = {
     '50': '重庆', '51': '四川', '52': '贵州', '53': '云南', '54': '西藏',
     '61': '陕西', '62': '甘肃', '63': '青海', '64': '宁夏', '65': '新疆',
 }
-YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+DEFAULT_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
 
 INSERT_SQL = """INSERT INTO gaokao_assistant.fact_admission_history
 (school_id,province_id,year,special_id,sp_name,spname,info,remark,
@@ -142,6 +141,38 @@ def make_conn():
         vcluster='default', schema='gaokao_assistant'
     )
 
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='高考录取历史数据采集脚本',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''示例：
+  # 采集全部年份（默认 2018-2024）
+  python3 scraper.py
+
+  # 只采集 2025 年新数据
+  python3 scraper.py --years 2025
+
+  # 采集多个年份
+  python3 scraper.py --years 2024 2025
+
+  # 从头全量重采（忽略断点）
+  python3 scraper.py --reset
+'''
+    )
+    parser.add_argument(
+        '--years', type=int, nargs='+', default=None,
+        metavar='YEAR',
+        help='指定采集年份，可传多个，如 --years 2025 或 --years 2024 2025。默认采集全部年份（2018-2024）'
+    )
+    parser.add_argument(
+        '--reset', action='store_true',
+        help='忽略断点文件，从头全量重采（慎用，会重复采集已有数据）'
+    )
+    return parser.parse_args()
+
+args = parse_args()
+YEARS = args.years if args.years else DEFAULT_YEARS
+
 schools = []
 with open('/tmp/university_info.csv', 'r') as f:
     for row in csv.DictReader(f):
@@ -153,8 +184,8 @@ with open('/tmp/university_info.csv', 'r') as f:
         except: pass
 schools.sort()
 
-done_keys = load_done()
-log(f"热度前500高校: {len(schools)} 所，7年，31省")
+done_keys = set() if args.reset else load_done()
+log(f"学校: {len(schools)} 所，年份: {YEARS}，省份: 31")
 log(f"断点: 已完成 {len(done_keys):,} 个组合，继续采集")
 
 tasks = []

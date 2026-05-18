@@ -39,10 +39,9 @@
     - 建议将连接参数改为从环境变量读取（见 make_conn 函数注释）
 ========================================
 """
-import urllib.request, json, csv, time, os
+import urllib.request, json, csv, time, os, argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections import Counter
-import os
 import clickzetta
 
 LOG = '/tmp/gaokao_repair.log'
@@ -59,7 +58,7 @@ PROVINCES = {
     '50': '重庆', '51': '四川', '52': '贵州', '53': '云南', '54': '西藏',
     '61': '陕西', '62': '甘肃', '63': '青海', '64': '宁夏', '65': '新疆',
 }
-YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
+DEFAULT_YEARS = [2018, 2019, 2020, 2021, 2022, 2023, 2024]
 
 INSERT_SQL = (
     "INSERT INTO gaokao_assistant.fact_admission_history "
@@ -153,6 +152,29 @@ with open('/tmp/university_info.csv', 'r') as f:
             pass
 schools.sort()
 school_map = {sid: name for _, sid, name in schools}
+
+# ── 命令行参数 ────────────────────────────────────────────
+parser = argparse.ArgumentParser(
+    description='高考数据补全脚本',
+    formatter_class=argparse.RawDescriptionHelpFormatter,
+    epilog='''示例：
+  # 补全全部年份（默认 2018-2024）
+  python3 repair.py
+
+  # 只补全 2025 年
+  python3 repair.py --years 2025
+
+  # 补全多个年份
+  python3 repair.py --years 2024 2025
+'''
+)
+parser.add_argument(
+    '--years', type=int, nargs='+', default=None,
+    metavar='YEAR',
+    help='指定补全年份，可传多个，如 --years 2025。默认补全全部年份（2018-2024）'
+)
+args = parser.parse_args()
+YEARS = args.years if args.years else DEFAULT_YEARS
 
 theory_set = set()
 for rank, sid, name in schools:
