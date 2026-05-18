@@ -124,51 +124,51 @@ def init_tables(conn):
     cur.execute("DROP TABLE IF EXISTS gaokao_assistant.dim_school")
     cur.execute("""
         CREATE TABLE gaokao_assistant.dim_school (
-            school_id        INT     COMMENT '高校ID，与 fact_admission_history.school_id 关联',
-            name             STRING  COMMENT '高校名称',
-            province_name    STRING  COMMENT '所在省份',
-            city_name        STRING  COMMENT '所在城市',
-            type_name        STRING  COMMENT '院校类型（综合类/理工类/师范类等）',
-            school_nature    STRING  COMMENT '办学性质（公办/民办）',
-            level_name       STRING  COMMENT '办学层次（本科/专科）',
-            f985             INT     COMMENT '是否985（1=是，0=否）',
-            f211             INT     COMMENT '是否211（1=是，0=否）',
-            dual_class       STRING  COMMENT '双一流类型（双一流/NULL=非双一流）',
-            num_subject      INT     COMMENT '国家重点学科数',
-            num_master       INT     COMMENT '硕士点数',
-            num_doctor       INT     COMMENT '博士点数',
-            num_academician  INT     COMMENT '院士数',
-            ruanke_rank      INT     COMMENT '软科综合排名（0=未上榜）',
-            qs_rank          STRING  COMMENT 'QS世界排名',
+            school_id        INT     COMMENT '高校ID，与 fact_admission_history.school_id 关联（如清华=140，北大=31，复旦=132，上交=125，浙大=114，西交=330）',
+            name             STRING  COMMENT '高校全称（如清华大学）',
+            province_name    STRING  COMMENT '高校所在省份（如北京、上海）',
+            city_name        STRING  COMMENT '高校所在城市（如北京市、上海市）',
+            type_name        STRING  COMMENT '院校类型，按学科特色分类：综合类/理工类/师范类/财经类/医药类/农林类/政法类/语言类/艺术类/体育类/民族类',
+            school_nature    STRING  COMMENT '办学性质：公办/民办/中外合作办学。API 原始字段名为 school_nature_name',
+            level_name       STRING  COMMENT '办学层次：本科/专科（高职）',
+            f985             INT     COMMENT '是否 985 工程院校（1=是，0=否）。全国共 39 所',
+            f211             INT     COMMENT '是否 211 工程院校（1=是，0=否）。全国共 116 所，含全部 985',
+            dual_class       STRING  COMMENT '双一流建设类别：双一流A类/双一流B类/NULL=非双一流。共 147 所双一流高校',
+            num_subject      INT     COMMENT '国家一级重点学科数（教育部评定）。清华=21，北大=18，浙大=14',
+            num_master       INT     COMMENT '一级学科硕士点数量',
+            num_doctor       INT     COMMENT '一级学科博士点数量',
+            num_academician  INT     COMMENT '两院院士数量（中国科学院+中国工程院在校）。清华=89，北大=76',
+            ruanke_rank      INT     COMMENT '软科中国大学综合排名。0=未上榜或排名500+。每年更新，以采集时数据为准',
+            qs_rank          STRING  COMMENT 'QS 世界大学排名。字符串类型，因部分学校排名为区间（如 501-510）。NULL=未上榜',
             motto            STRING  COMMENT '校训',
             address          STRING  COMMENT '学校地址',
-            site             STRING  COMMENT '招生网站'
-        )
+            site             STRING  COMMENT '招生官网 URL'
+        ) COMMENT '高校基本信息维度表。含院校类型/985/211/双一流/软科排名/QS排名/院士数/校训等19个字段。数据来源：gaokao.cn school/info.json 接口'
     """)
 
     cur.execute("DROP TABLE IF EXISTS gaokao_assistant.dim_school_rank")
     cur.execute("""
         CREATE TABLE gaokao_assistant.dim_school_rank (
-            school_id   INT    COMMENT '高校ID',
-            rank_name   STRING COMMENT '榜单名称（软科综合/QS世界/US世界/泰晤士等）',
-            rank        STRING COMMENT '排名（字符串，因部分榜单含区间如501-600）'
-        )
+            school_id   INT    COMMENT '高校ID，关联 dim_school.school_id',
+            rank_name   STRING COMMENT '榜单名称。共6类：软科综合/校友会综合/QS世界/US世界/泰晤士（大陆）/人气值排名',
+            rank        STRING COMMENT '排名值（字符串，部分榜单含区间如 501-600 或 1000+）'
+        ) COMMENT '高校多榜单排名明细表。每所学校最多6条，覆盖软科综合/校友会综合/QS世界/US世界/泰晤士（大陆）/人气值排名。数据来源：gaokao.cn school/rank.json 接口'
     """)
 
     cur.execute("DROP TABLE IF EXISTS gaokao_assistant.dim_school_special")
     cur.execute("""
         CREATE TABLE gaokao_assistant.dim_school_special (
-            school_id          INT    COMMENT '高校ID',
-            special_id         STRING COMMENT '专业ID',
-            name               STRING COMMENT '专业名称',
-            xueke_rank         STRING COMMENT '教育部学科评估排名',
-            xueke_rank_score   STRING COMMENT '学科评估等级（A+/A/A-/B+等）',
-            ruanke_rank        STRING COMMENT '软科专业排名',
-            ruanke_level       STRING COMMENT '软科专业等级',
-            nation_first_class INT    COMMENT '国家一流专业（1=是，2=否）',
-            nation_feature     INT    COMMENT '国家特色专业（1=是，2=否）',
-            limit_year         STRING COMMENT '学制（四年/五年等）'
-        )
+            school_id          INT    COMMENT '高校ID，关联 dim_school.school_id',
+            special_id         STRING COMMENT '专业ID（教育部专业目录编码，如建筑学=241，计算机科学与技术=080901）',
+            name               STRING COMMENT '专业名称（标准名称，不含方向备注）',
+            xueke_rank         STRING COMMENT '教育部学科评估排名（第几名）。来源：教育部第四轮学科评估（2017年）',
+            xueke_rank_score   STRING COMMENT '教育部学科评估等级：A+（前2%）/A（2-5%）/A-（5-10%）/B+（10-20%）/B（20-30%）/B-（30-40%）/C+/C/C-',
+            ruanke_rank        STRING COMMENT '软科中国最好学科排名（该专业在全国的排名位次）',
+            ruanke_level       STRING COMMENT '软科学科等级（A+/A/A-/B+/B/B-/C+/C/C-，与教育部评估格式一致）',
+            nation_first_class INT    COMMENT '国家级一流本科专业建设点（教育部双万计划）：1=是，2=否。全国约1万个国家级一流专业点',
+            nation_feature     INT    COMMENT '国家特色专业（教育部本科教学工程，早于双万计划）：1=是，2=否',
+            limit_year         STRING COMMENT '标准学制：四年/五年（建筑学、医学等）/三年（专科）'
+        ) COMMENT '高校专业评级维度表。含教育部学科评估等级（A+~C-）、软科学科排名、国家一流专业/特色专业标识。注意：基于2017年第四轮学科评估，第五轮（2022年）结果尚未更新。数据来源：gaokao.cn school/special/list.json 接口'
     """)
     conn.commit()
     print("三张维度表已创建")
