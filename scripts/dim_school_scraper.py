@@ -235,6 +235,67 @@ def main():
 
     print(f"完成！dim_school: {len(school_rows)} 行, dim_school_rank: {len(rank_rows_all)} 行, dim_school_special: {len(special_rows_all)} 行, 错误: {errors}")
 
+    # 每次采集完成后自动更新所有表的注释（含最新行数），避免注释信息过时
+    update_table_comments()
+
+
+def update_table_comments():
+    """查询各表真实行数，更新表级注释。每次 dim_school_scraper.py 运行后自动调用。"""
+    conn = make_conn()
+    cur = conn.cursor()
+
+    counts = {}
+    for t in ['fact_admission_history', 'dim_school', 'dim_school_rank', 'dim_school_special', 'dim_university']:
+        try:
+            cur.execute(f"SELECT COUNT(1) FROM gaokao_assistant.{t}")
+            counts[t] = cur.fetchone()[0]
+        except:
+            counts[t] = 0
+
+    try:
+        cur.execute("SELECT COUNT(DISTINCT school_id), MIN(year), MAX(year) FROM gaokao_assistant.fact_admission_history")
+        school_cnt, yr_min, yr_max = cur.fetchone()
+    except:
+        school_cnt, yr_min, yr_max = 0, 2018, 2024
+
+    table_comments = {
+        'fact_admission_history':
+            f"高校专业录取历史数据（事实表）。每行代表某高校某专业在某省某年的录取情况。"
+            f"当前 {counts['fact_admission_history']:,} 条，覆盖 {school_cnt} 所高校、31省、{yr_min}-{yr_max}年。"
+            f"注意：①2018/2019年 sp_name/lq_num 为空（API历史数据限制）；"
+            f"②min_score=0 表示数据缺失（主要集中在2022年新高考过渡期）；"
+            f"③批次名称各省不统一，跨省比较需归一化；"
+            f"④sp_info（选科要求）仅新高考省份2019年起有值；"
+            f"⑤查询时建议加 WHERE min_score > 0 过滤无效分数；"
+            f"⑥所有字符串字段空值已统一为 NULL。"
+            f"行数随年度更新增长，注释由 dim_school_scraper.py 自动维护。",
+        'dim_school':
+            f"高校基本信息维度表，当前 {counts['dim_school']:,} 所。"
+            f"含院校类型/985/211/双一流/软科排名/QS排名/院士数/校训等19个字段。"
+            f"数据来源：gaokao.cn school/info.json 接口。每次运行 dim_school_scraper.py 后自动更新。",
+        'dim_school_rank':
+            f"高校多榜单排名明细表，当前 {counts['dim_school_rank']:,} 条。"
+            f"每所学校最多6条，覆盖软科综合/校友会综合/QS世界/US世界/泰晤士（大陆）/人气值排名。"
+            f"数据来源：gaokao.cn school/rank.json 接口。每次运行 dim_school_scraper.py 后自动更新。",
+        'dim_school_special':
+            f"高校专业评级维度表，当前 {counts['dim_school_special']:,} 条。"
+            f"含教育部学科评估等级（A+~C-）、软科学科排名、国家一流专业/特色专业标识。"
+            f"注意：基于2017年第四轮学科评估，第五轮（2022年）结果尚未更新。"
+            f"数据来源：gaokao.cn school/special/list.json 接口。每次运行 dim_school_scraper.py 后自动更新。",
+        'dim_university':
+            f"全国高校基础列表，共 {counts['dim_university']:,} 所，含地理坐标、热度排名和院校分类。"
+            f"与 dim_school 的区别：dim_university 覆盖全量高校但字段少，dim_school 字段更丰富（985/211/排名/院士数等）。"
+            f"数据来源：university_info.csv。",
+    }
+
+    for table, comment in table_comments.items():
+        safe = comment.replace("'", "''")
+        cur.execute(f"ALTER TABLE gaokao_assistant.{table} SET COMMENT '{safe}'")
+
+    conn.commit()
+    conn.close()
+    print("表注释已同步更新（含最新行数）")
+
 
 if __name__ == "__main__":
     main()

@@ -258,12 +258,13 @@ python3 scripts/scraper.py --years 2025
 python3 scripts/repair.py --years 2025
 ```
 
-### 步骤 5：更新维度表排名数据
+### 步骤 5：更新维度表排名数据 + 同步注释
 
-软科排名、QS 排名等每年更新，重跑维度采集脚本：
+软科排名、QS 排名等每年更新，重跑维度采集脚本。**脚本运行完成后会自动更新所有表的注释**（含最新行数），无需手动操作：
 
 ```bash
 python3 scripts/dim_school_scraper.py
+# 完成后输出：表注释已同步更新（含最新行数）
 ```
 
 > 注意：dim_school_scraper.py 会 DROP + CREATE 三张维度表，原有数据会被覆盖，这是正常的。
