@@ -64,22 +64,15 @@ def fetch_school_info(school_id):
             int(d.get("num_master") or 0),
             int(d.get("num_doctor") or 0),
             int(d.get("num_academician") or 0),
-            int(d.get("ruanke_rank") or 0),
+            int(''.join(c for c in str(d.get("ruanke_rank") or '0') if c.isdigit()) or 0),
             d.get("qs_rank") or None,
             d.get("motto") or None,
             d.get("address") or None,
             d.get("site") or None,
         )
 
-        # dim_school_rank 行（多条）
+        # dim_school_rank 行（多条）—— 只用 rank.json 接口（info.json 里的 rank 是 dict 不是列表）
         rank_rows = []
-        for r in (data.get("data", {}).get("rank") or []):
-            rank_rows.append((
-                int(school_id),
-                r.get("rank_name") or None,
-                r.get("rank") or None,
-            ))
-        # rank 也可能在单独接口
         url2 = f"{BASE}/school/{school_id}/rank.json"
         try:
             req2 = urllib.request.Request(url2, headers=HEADERS)
@@ -118,7 +111,10 @@ def fetch_school_info(school_id):
             pass
 
         return school_row, rank_rows, special_rows
-    except:
+    except Exception as e:
+        import traceback
+        print(f'ERROR school_id={school_id}: {e}')
+        traceback.print_exc()
         return None, None, None
 
 
@@ -213,16 +209,27 @@ def main():
                 print(f"  进度 {i}/{len(schools)}, 已采集 {len(school_rows)} 所")
 
     # 批量写入
-    INSERT_SCHOOL = (
-        "INSERT INTO gaokao_assistant.dim_school VALUES "
-        "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-    )
-    INSERT_RANK = "INSERT INTO gaokao_assistant.dim_school_rank VALUES (?,?,?)"
-    INSERT_SPECIAL = "INSERT INTO gaokao_assistant.dim_school_special VALUES (?,?,?,?,?,?,?,?,?,?)"
+    def esc(v):
+        if v is None:
+            return 'NULL'
+        if isinstance(v, int):
+            return str(v)
+        return "'" + str(v).replace("'", "''") + "'"
 
-    cur.executemany(INSERT_SCHOOL, school_rows)
-    cur.executemany(INSERT_RANK, rank_rows_all)
-    cur.executemany(INSERT_SPECIAL, special_rows_all)
+    def insert_rows(cur, table, rows):
+        if not rows:
+            return
+        # 每批500行
+        for i in range(0, len(rows), 500):
+            batch = rows[i:i+500]
+            vals = ', '.join('(' + ', '.join(esc(c) for c in row) + ')' for row in batch)
+            cur.execute(f"INSERT INTO {table} VALUES {vals}")
+
+    insert_rows(cur, "gaokao_assistant.dim_school", school_rows)
+    conn.commit()
+    insert_rows(cur, "gaokao_assistant.dim_school_rank", rank_rows_all)
+    conn.commit()
+    insert_rows(cur, "gaokao_assistant.dim_school_special", special_rows_all)
     conn.commit()
     conn.close()
 
