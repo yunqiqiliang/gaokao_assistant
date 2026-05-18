@@ -1,8 +1,8 @@
 # 高考志愿填报数据集
 
-基于 gaokao.cn 公开数据构建的高考录取历史数据集，覆盖全国热度前 500 所高校、31 个省份、2018-2024 年共 7 年，约 **203 万条**专业录取记录。
+基于 gaokao.cn 公开数据构建的高考录取历史数据集，覆盖全国 2784 所高校、31 个省份、2018-2024 年共 7 年。
 
-数据存储在 ClickZetta Lakehouse，可直接用 SQL 查询，也可以导出为 CSV 使用。
+数据存储在 ClickZetta Lakehouse，可直接用 SQL 查询分析。
 
 ---
 
@@ -10,11 +10,12 @@
 
 | 维度 | 数量 |
 |------|------|
-| 高校 | 496 所（热度前 500，其中 4 所无招生数据） |
+| 高校（事实表） | ~840 所（采集中，目标 2784 所） |
+| 高校（维度表） | 2564 所 |
 | 省份 | 31 个（含直辖市、自治区） |
-| 年份 | 2018 - 2024，共 7 年 |
-| 总记录数 | 约 203 万条 |
-| 覆盖率 | 86.1%（其余为该校不在该省招生） |
+| 年份 | 2018–2024，共 7 年 |
+| 录取记录 | ~270 万条（采集中） |
+| 专业评级记录 | 98,837 条 |
 
 ---
 
@@ -24,89 +25,141 @@
 
 | 表名 | 说明 | 行数 |
 |------|------|------|
-| `fact_admission_history` | 专业录取历史（最低分/位次/批次/选科要求等） | ~203 万 |
+| `fact_admission_history` | 专业录取历史（最低分/位次/批次/选科要求等 32 列） | ~270 万 |
 
-### 维度表（需运行 `dim_school_scraper.py` 采集）
+### 维度表
 
-| 表名 | 说明 |
-|------|------|
-| `dim_school` | 高校基本信息（985/211/双一流/排名/院士数等） |
-| `dim_school_rank` | 高校各榜单排名（软科/QS/US/泰晤士） |
-| `dim_school_special` | 高校专业评级（国家一流专业/学科评估等级） |
+| 表名 | 说明 | 行数 |
+|------|------|------|
+| `dim_school` | 高校基本信息（985/211/双一流/软科排名/院士数等） | 2,564 |
+| `dim_school_rank` | 高校各榜单排名（软科/校友会/QS/US/泰晤士） | 6,561 |
+| `dim_school_special` | 高校专业评级（国家一流专业/学科评估等级） | 98,837 |
+| `dim_university` | 全国高校基础列表（含地理坐标、热度排名） | 2,784 |
+
+---
+
+## 典型使用场景
+
+### 1. 志愿填报参考
+根据考生分数和省份，查询历史上哪些学校哪些专业的录取分数线与考生分数接近：
+```sql
+-- 广东考生 620 分，查 2024 年普通类可冲/稳/保的专业
+SELECT s.name, f.spname, f.local_batch_name, f.min_score, f.min_rank
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '44' AND f.year = 2024
+  AND f.min_score BETWEEN 600 AND 635
+  AND f.zslx_name = '普通类' AND f.min_score > 0
+ORDER BY f.min_score DESC;
+```
+
+### 2. 院校横向对比
+对比同类院校在同一省份的录取分数差异，判断院校梯度：
+```sql
+-- 对比 985 高校 2024 年在浙江的最低录取分
+SELECT s.name, s.ruanke_rank, MIN(f.min_score) AS min_score, MIN(f.min_rank) AS min_rank
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '33' AND f.year = 2024
+  AND s.f985 = 1 AND f.min_score > 0
+GROUP BY s.name, s.ruanke_rank
+ORDER BY min_score DESC;
+```
+
+### 3. 专业分数趋势分析
+追踪某专业历年分数线变化，判断热度走势：
+```sql
+-- 清华大学计算机类专业在北京历年最低分
+SELECT year, spname, min_score, min_rank
+FROM gaokao_assistant.fact_admission_history
+WHERE school_id = 140 AND province_id = '11'
+  AND spname LIKE '%计算机%' AND min_score > 0
+ORDER BY year, min_score DESC;
+```
+
+### 4. 选科规划（新高考省份）
+根据选科要求筛选可报专业，辅助高一/高二选科决策：
+```sql
+-- 湖南考生选了物理，查 2024 年医学类可报专业
+SELECT s.name, f.spname, f.sp_info, f.min_score, f.min_rank
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '43' AND f.year = 2024
+  AND f.level2_name LIKE '%医学%'
+  AND (f.sp_info LIKE '%物理%' OR f.sp_info IS NULL)
+  AND f.min_score > 0
+ORDER BY f.min_score DESC;
+```
+
+### 5. 学科评估与录取分数联合分析
+结合教育部学科评估等级，找性价比高的专业：
+```sql
+-- A+ 学科评估的计算机专业，各校录取分对比
+SELECT s.name, sp.xueke_rank_score, f.province_id,
+       MIN(f.min_score) AS min_score
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+JOIN gaokao_assistant.dim_school_special sp ON s.school_id = sp.school_id
+WHERE sp.name LIKE '%计算机%' AND sp.xueke_rank_score = 'A+'
+  AND f.year = 2024 AND f.min_score > 0
+GROUP BY s.name, sp.xueke_rank_score, f.province_id
+ORDER BY min_score DESC;
+```
 
 ---
 
 ## 快速开始
 
-### 1. 安装依赖
+### 环境配置
 
 ```bash
 pip install -r scripts/requirements.txt
+
+# 配置连接信息（复制模板后填入真实值）
+cp .env.example .env
+# 编辑 .env，填入 CZ_SERVICE / CZ_INSTANCE / CZ_WORKSPACE / CZ_USERNAME / CZ_PASSWORD
 ```
 
-### 2. 查询数据（SQL）
-
-连接 ClickZetta Lakehouse 后直接查询：
-
-```sql
--- 查看清华大学2024年在北京的录取情况
-SELECT spname, local_batch_name, min_score, min_rank
-FROM gaokao_assistant.fact_admission_history
-WHERE school_id = 140
-  AND province_id = '11'
-  AND year = 2024
-  AND min_score > 0
-ORDER BY min_score DESC;
-```
-
-更多示例见 [docs/quick_start.md](docs/quick_start.md)。
-
-### 3. 重新采集数据
+### 运行采集脚本
 
 ```bash
-# 采集专业录取历史（主表）
+# 加载环境变量
+export $(cat .env | xargs)
+
+# 1. 采集专业录取历史（主表，支持断点续采）
 python3 scripts/scraper.py
 
-# 数据补全（处理采集中断、API失败等）
+# 2. 数据补全（采集中断或 API 失败后运行）
 python3 scripts/repair.py
 
-# 采集高校维度信息（dim_school 等三张表）
+# 3. 采集高校维度信息（dim_school 等三张表）
 python3 scripts/dim_school_scraper.py
 ```
 
----
-
-## 主要字段说明
-
-`fact_admission_history` 核心字段：
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `school_id` | INT | 高校 ID（如清华=140，北大=31） |
-| `province_id` | STRING | 省份代码（如 11=北京，44=广东） |
-| `year` | INT | 招生年份（2018-2024） |
-| `spname` | STRING | 专业完整名称（含备注） |
-| `sp_name` | STRING | 专业基础名（2018/2019年为空） |
-| `local_batch_name` | STRING | 批次名称（各省叫法不同） |
-| `zslx_name` | STRING | 招生类型（普通类/中外合作等） |
-| `min_score` | INT | 最低录取分（0=数据缺失） |
-| `min_rank` | INT | 最低录取位次（0=该省不公布） |
-| `diff` | INT | 超出省控线分数 |
-| `sp_info` | STRING | 选科要求（新高考省份2019年起有值） |
-| `level2_name` | STRING | 学科门类（工学/理学/文学等） |
-| `level3_name` | STRING | 专业大类（计算机类/经济学类等） |
-
-完整字段说明见 [docs/data_dictionary.md](docs/data_dictionary.md)。
+完整操作流程见 [docs/ops_runbook.md](docs/ops_runbook.md)。
 
 ---
 
-## 数据质量说明
+## 数据完整性说明
 
-- **min_score=0**：2022 年新高考过渡期部分省份数据缺失，查询时建议加 `WHERE min_score > 0`
-- **2018/2019 年**：`sp_name`、`lq_num` 字段为空（API 历史数据限制），用 `spname` 替代
-- **批次名称**：各省叫法不统一（"本科批"/"本科一批"/"平行录取一段"），跨省比较需归一化
-- **选科要求**：仅新高考省份 2019 年起有值，全表约 13.6% 有值
-- **所有字符串字段**：空值统一为 NULL（非空字符串），可直接用 `IS NULL` 判断
+### 已知缺失
+
+| 省份 | 缺失年份 | 原因 |
+|------|---------|------|
+| 上海 | 2022+ | 新高考改革后数据迁移，静态 API 无对应文件 |
+| 湖北 | 2021+ | 同上 |
+| 湖南 | 部分年份 | 同上 |
+| 海南 | 部分年份 | 同上 |
+| 西藏 | 全部年份 | 大多数高校不在西藏招生 |
+
+这些缺失是数据源（gaokao.cn 静态 API）本身的限制，不是采集问题。
+
+### 字段级缺失
+
+- `min_score = 0`：数据缺失，查询时加 `WHERE min_score > 0`
+- `sp_name`：2018/2019 年为空，用 `spname` 替代
+- `lq_num`（录取人数）：2018/2019 年为空
+- `sp_info`（选科要求）：仅新高考省份 2019 年起有值
 
 ---
 
@@ -115,11 +168,13 @@ python3 scripts/dim_school_scraper.py
 ```
 gaokao_assistant/
 ├── README.md
+├── .env.example              # 连接配置模板
 ├── docs/
-│   ├── data_dictionary.md    # 完整字段说明
-│   └── quick_start.md        # 快速上手（含 SQL 示例）
+│   ├── data_dictionary.md    # 完整字段说明（32 列）
+│   ├── quick_start.md        # SQL 查询示例
+│   └── ops_runbook.md        # 运维手册（从头建库/补数据/质量检查/修复）
 └── scripts/
-    ├── scraper.py             # 主采集脚本（专业录取历史）
+    ├── scraper.py             # 主采集脚本（专业录取历史，支持断点续采）
     ├── repair.py              # 数据补全脚本
     ├── dim_school_scraper.py  # 高校维度数据采集
     └── requirements.txt       # Python 依赖
@@ -131,8 +186,9 @@ gaokao_assistant/
 
 数据来自 [gaokao.cn](https://www.gaokao.cn) 公开静态接口，仅供学习和研究使用。
 
-主要接口：
-- `schoolspecialscore/{school_id}/{year}/{province_id}.json` — 专业录取分数（已采集）
-- `school/{school_id}/info.json` — 高校基本信息
-- `school/{school_id}/rank.json` — 高校排名
-- `school/{school_id}/special/list.json` — 高校专业评级
+| 接口 | 说明 |
+|------|------|
+| `schoolspecialscore/{school_id}/{year}/{province_id}.json` | 专业录取分数（事实表数据源） |
+| `school/{school_id}/info.json` | 高校基本信息（dim_school 数据源） |
+| `school/{school_id}/rank.json` | 高校排名（dim_school_rank 数据源） |
+| `school/{school_id}/special/list.json` | 高校专业评级（dim_school_special 数据源） |

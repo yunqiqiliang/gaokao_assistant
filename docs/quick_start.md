@@ -1,201 +1,282 @@
 # 快速上手指南
 
-本指南面向非技术人员，帮助你快速连接数据库并查询高考录取历史数据。
+---
+
+## 一、从头开始（全新部署）
+
+### 1. 安装依赖
+
+```bash
+pip install -r scripts/requirements.txt
+```
+
+### 2. 配置连接信息
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入以下变量：
+# CZ_SERVICE=https://cn-shanghai-alicloud.api.clickzetta.com
+# CZ_INSTANCE=你的实例ID
+# CZ_WORKSPACE=你的工作空间
+# CZ_USERNAME=你的用户名
+# CZ_PASSWORD=你的密码
+# CZ_VCLUSTER=default
+
+export $(cat .env | xargs)
+```
+
+### 3. 采集数据（按顺序执行）
+
+```bash
+# 第一步：采集专业录取历史（主表，约 10-14 小时，支持断点续采）
+python3 scripts/scraper.py
+
+# 第二步：补全中断或失败的数据
+python3 scripts/repair.py
+
+# 第三步：采集高校维度信息（约 15 分钟）
+python3 scripts/dim_school_scraper.py
+```
+
+采集完成后 Lakehouse 中会有 5 张表：
+- `fact_admission_history`：专业录取历史（主表）
+- `dim_school`：高校基本信息
+- `dim_school_rank`：高校各榜单排名
+- `dim_school_special`：高校专业评级
+- `dim_university`：全国高校基础列表（含地理坐标）
 
 ---
 
-## 第一步：连接 ClickZetta Lakehouse
+## 二、连接数据库
 
-### 方式一：使用 Python 脚本查询（推荐）
-
-安装依赖：
-
-```bash
-pip install clickzetta-connector
-```
-
-连接并查询：
+### Python
 
 ```python
-import clickzetta
+import os, clickzetta
 
-# 建立连接
 conn = clickzetta.connect(
-    service='https://cn-shanghai-alicloud.api.clickzetta.com',
-    instance='f8866243',
-    workspace='quick_start',
-    username='你的用户名',
-    password='你的密码',
-    vcluster='default',
+    service=os.environ['CZ_SERVICE'],
+    instance=os.environ['CZ_INSTANCE'],
+    workspace=os.environ['CZ_WORKSPACE'],
+    username=os.environ['CZ_USERNAME'],
+    password=os.environ['CZ_PASSWORD'],
+    vcluster=os.environ.get('CZ_VCLUSTER', 'default'),
     schema='gaokao_assistant'
 )
-
 cur = conn.cursor()
-
-# 执行查询
 cur.execute("SELECT COUNT(1) FROM gaokao_assistant.fact_admission_history")
 print("总记录数：", cur.fetchone()[0])
-
 conn.close()
 ```
 
-### 方式二：使用 ClickZetta 控制台
+### ClickZetta 控制台
 
-1. 登录 ClickZetta 控制台
-2. 选择实例 `f8866243`，工作空间 `quick_start`
-3. 在 SQL 编辑器中直接输入查询语句
+登录控制台 → 选择对应实例和工作空间 → SQL 编辑器直接查询。
 
 ---
 
-## 第二步：常用查询示例
+## 三、常用查询示例
 
-### 示例 1：查询某高校在某省的历年最低录取分数
+> 常用 school_id：清华=140，北大=31，复旦=132，上交=125，浙大=114，西交=330，人大=46
+> 常用 province_id：北京=11，上海=31，广东=44，浙江=33，四川=51，湖北=42
 
-**场景**：想了解中国人民大学（school_id=10002）在广东（province_id='44'）历年的最低录取分数变化。
+### 示例 1：查某高校在某省的历年最低录取分
 
 ```sql
-SELECT
-    year AS 年份,
-    spname AS 专业名称,
-    local_batch_name AS 批次,
-    min_score AS 最低分,
-    min_rank AS 最低位次
+-- 清华大学在广东历年最低录取分
+SELECT year, spname, local_batch_name, min_score, min_rank
 FROM gaokao_assistant.fact_admission_history
-WHERE school_id = 10002
+WHERE school_id = 140
   AND province_id = '44'
   AND min_score > 0
 ORDER BY year DESC, min_score DESC;
 ```
 
-**说明**：`min_score > 0` 用于过滤数据缺失的记录（缺失时存储为 0）。
-
----
-
-### 示例 2：查询某专业在全国各省的录取分数（最新年份）
-
-**场景**：想了解"计算机科学与技术"专业 2024 年在各省的录取情况。
+### 示例 2：按分数查可报学校和专业
 
 ```sql
-SELECT
-    province_id AS 省份代码,
-    school_id AS 学校ID,
-    spname AS 专业名称,
-    min_score AS 最低分,
-    min_rank AS 最低位次,
-    local_batch_name AS 批次
-FROM gaokao_assistant.fact_admission_history
-WHERE year = 2024
-  AND spname LIKE '%计算机科学与技术%'
-  AND min_score > 0
-ORDER BY province_id, min_score DESC;
+-- 广东考生 620 分，查 2024 年普通类录取分在 610-630 的专业
+SELECT s.name AS 学校, f.spname AS 专业, f.local_batch_name AS 批次,
+       f.min_score AS 最低分, f.min_rank AS 最低位次
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '44' AND f.year = 2024
+  AND f.min_score BETWEEN 610 AND 630
+  AND f.zslx_name = '普通类'
+ORDER BY f.min_score DESC;
 ```
 
-**说明**：`LIKE '%计算机科学与技术%'` 支持模糊匹配，可以找到名称略有差异的专业。
-
----
-
-### 示例 3：查询某分数段内可报考的高校和专业
-
-**场景**：广东考生，2024 年理科 620 分，想看哪些学校的哪些专业历史最低分在 610–630 分之间。
+### 示例 3：某专业历年分数趋势
 
 ```sql
-SELECT
-    school_id AS 学校ID,
-    spname AS 专业名称,
-    local_batch_name AS 批次,
-    min_score AS 最低分,
-    min_rank AS 最低位次,
-    level1_name AS 学科门类
+-- 北京大学计算机类专业在北京历年最低分
+SELECT year, spname, min_score, min_rank, lq_num AS 录取人数
 FROM gaokao_assistant.fact_admission_history
-WHERE province_id = '44'
-  AND year = 2024
-  AND min_score BETWEEN 610 AND 630
-  AND zslx_name = '普通类'
-ORDER BY min_score DESC;
-```
-
-**说明**：`BETWEEN 610 AND 630` 查询分数区间，`zslx_name = '普通类'` 排除艺术、体育等特殊类型。
-
----
-
-### 示例 4：分析某高校某专业的历年分数线趋势
-
-**场景**：想看清华大学（school_id=10003）软件工程专业在北京（province_id='11'）的历年分数变化。
-
-```sql
-SELECT
-    year AS 年份,
-    spname AS 专业名称,
-    min_score AS 最低分,
-    average_score AS 平均分,
-    max_score AS 最高分,
-    lq_num AS 录取人数
-FROM gaokao_assistant.fact_admission_history
-WHERE school_id = 10003
+WHERE school_id = 31
   AND province_id = '11'
-  AND spname LIKE '%软件工程%'
+  AND spname LIKE '%计算机%'
   AND min_score > 0
 ORDER BY year ASC;
 ```
 
-**说明**：通过历年数据对比，可以判断该专业分数线是否逐年上涨。
+### 示例 4：985 院校在某省录取分对比
+
+```sql
+-- 985 高校 2024 年在浙江的最低录取分排名
+SELECT s.name, s.ruanke_rank AS 软科排名,
+       MIN(f.min_score) AS 最低分, MIN(f.min_rank) AS 最低位次
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '33' AND f.year = 2024
+  AND s.f985 = 1 AND f.min_score > 0
+GROUP BY s.name, s.ruanke_rank
+ORDER BY 最低分 DESC;
+```
+
+### 示例 5：新高考选科筛专业
+
+```sql
+-- 湖南考生选了物理，查 2024 年医学类可报专业
+SELECT s.name AS 学校, f.spname AS 专业, f.sp_info AS 选科要求,
+       f.min_score AS 最低分, f.min_rank AS 最低位次
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+WHERE f.province_id = '43' AND f.year = 2024
+  AND f.level2_name LIKE '%医学%'
+  AND (f.sp_info LIKE '%物理%' OR f.sp_info IS NULL)
+  AND f.min_score > 0
+ORDER BY f.min_score DESC;
+```
+
+### 示例 6：结合学科评估找性价比专业
+
+```sql
+-- 计算机专业学科评估 A+ 的院校，2024 年在全国各省录取分
+SELECT s.name AS 学校, sp.xueke_rank_score AS 学科评估,
+       f.province_id AS 省份, MIN(f.min_score) AS 最低分
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+JOIN gaokao_assistant.dim_school_special sp ON s.school_id = sp.school_id
+WHERE sp.name LIKE '%计算机%' AND sp.xueke_rank_score = 'A+'
+  AND f.year = 2024 AND f.min_score > 0
+GROUP BY s.name, sp.xueke_rank_score, f.province_id
+ORDER BY 最低分 DESC;
+```
 
 ---
 
-### 示例 5：按选科要求筛选专业（新高考省份）
+## 四、数据补全（repair.py）
 
-**场景**：浙江（province_id='33'）考生，首选物理，想查 2024 年可报考的医学类专业。
+**什么时候用**：scraper.py 中途中断、网络超时、或发现某些学校/省份/年份数据缺失时。
+
+```bash
+export $(cat .env | xargs)
+python3 scripts/repair.py
+```
+
+repair.py 会自动：
+1. 计算理论上应有的全部组合（学校 × 省份 × 年份）
+2. 对比断点文件，找出未完成的组合
+3. 重新采集缺失部分
+4. 去重写入
+
+---
+
+## 五、数据质量检查
+
+### 检查各年数据量是否正常
+
+```sql
+SELECT year, COUNT(*) AS 记录数,
+       COUNT(DISTINCT school_id) AS 学校数,
+       COUNT(DISTINCT province_id) AS 省份数,
+       SUM(CASE WHEN min_score = 0 THEN 1 ELSE 0 END) AS 零分记录数
+FROM gaokao_assistant.fact_admission_history
+GROUP BY year
+ORDER BY year;
+```
+
+### 检查某学校是否有漏采省份
+
+```sql
+-- 清华大学 2024 年覆盖了哪些省份（应有 27-30 个）
+SELECT COUNT(DISTINCT province_id) AS 省份数,
+       COUNT(*) AS 记录数
+FROM gaokao_assistant.fact_admission_history
+WHERE school_id = 140 AND year = 2024;
+```
+
+### 检查重复数据
+
+```sql
+-- 检查是否有重复行（同一学校/省份/年份/专业/最低分）
+SELECT school_id, province_id, year, special_id, spname, min_score,
+       COUNT(*) AS cnt
+FROM gaokao_assistant.fact_admission_history
+GROUP BY school_id, province_id, year, special_id, spname, min_score
+HAVING cnt > 1
+LIMIT 20;
+```
+
+### 检查字段空值率
 
 ```sql
 SELECT
-    school_id AS 学校ID,
-    spname AS 专业名称,
-    sg_xuanke AS 选科要求,
-    min_score AS 最低分,
-    min_rank AS 最低位次,
-    local_batch_name AS 批次
-FROM gaokao_assistant.fact_admission_history
-WHERE province_id = '33'
-  AND year = 2024
-  AND level1_name = '医学'
-  AND (sg_xuanke LIKE '%化学%' OR sg_xuanke = '' OR sg_xuanke IS NULL)
-  AND min_score > 0
-ORDER BY min_score DESC;
+    SUM(CASE WHEN min_score = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS 零分率,
+    SUM(CASE WHEN min_rank = 0 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS 零位次率,
+    SUM(CASE WHEN sp_name IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS sp_name空值率,
+    SUM(CASE WHEN lq_num IS NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS 录取人数空值率
+FROM gaokao_assistant.fact_admission_history;
 ```
-
-**说明**：新高考省份需要关注 `sg_xuanke`（选科要求）和 `first_km`（首选科目）字段。
 
 ---
 
-## 常见问题
+## 六、数据修复
 
-**Q：查询结果中 min_score 为 0 是什么意思？**
+### 删除重复数据
 
-A：表示该条记录的分数数据缺失，原始 API 未返回分数信息。查询时加上 `WHERE min_score > 0` 可以过滤掉这些记录。
+ClickZetta 不支持直接 DELETE + 子查询去重，需要重建表：
+
+```sql
+-- 1. 建临时表存去重后的数据
+CREATE TABLE gaokao_assistant.fact_admission_history_dedup AS
+SELECT * FROM (
+    SELECT *, ROW_NUMBER() OVER (
+        PARTITION BY school_id, province_id, year, special_id, spname, min_score
+        ORDER BY school_id
+    ) AS rn
+    FROM gaokao_assistant.fact_admission_history
+) t WHERE rn = 1;
+
+-- 2. 确认行数后替换
+-- DROP TABLE gaokao_assistant.fact_admission_history;
+-- ALTER TABLE gaokao_assistant.fact_admission_history_dedup RENAME TO fact_admission_history;
+```
+
+### 补采特定学校/省份/年份
+
+修改 scraper.py 的学校列表，或直接用 repair.py 的断点机制重跑。
+
+---
+
+## 七、常见问题
+
+**Q：min_score = 0 是什么意思？**
+A：数据缺失，原始 API 未返回分数。查询时加 `WHERE min_score > 0` 过滤。
+
+**Q：为什么清华/北大在上海、湖北 2021 年后没有数据？**
+A：这些省份实施新高考改革后，gaokao.cn 的静态 API 没有生成对应文件，是数据源本身的限制，不是采集问题。
 
 **Q：min_rank（位次）为 0 是什么意思？**
+A：老高考省份（文理分科）没有位次数据。只有新高考改革省份才有有效位次。
 
-A：老高考省份（文理分科）没有位次数据，此字段为 0。只有实施新高考改革的省份才有有效位次数据。
-
-**Q：为什么同一所学校同一年份有很多条记录？**
-
-A：一所学校在一个省份通常招收多个专业，每个专业对应一条记录。部分高校还按专业组招生，同一专业组内有多个专业。
-
-**Q：如何找到某所学校的 school_id？**
-
-A：可以先用学校名称模糊查询：
+**Q：如何找某所学校的 school_id？**
+A：查 dim_school 表：
 ```sql
-SELECT DISTINCT school_id, year
-FROM gaokao_assistant.fact_admission_history
-WHERE spname LIKE '%北京大学%'
-LIMIT 10;
+SELECT school_id, name, province_name, ruanke_rank
+FROM gaokao_assistant.dim_school
+WHERE name LIKE '%武汉大学%';
 ```
-注意：spname 是专业名称，不含学校名。建议通过 gaokao.cn 网站查找学校 ID，或联系数据维护者获取学校 ID 对照表。
 
-**Q：数据更新到哪一年？**
-
-A：目前覆盖 2018–2024 年，2025 年数据待高考录取结束后更新。
-
-**Q：数据准确吗？可以直接用于志愿填报吗？**
-
-A：数据来源于 gaokao.cn 公开接口，仅供参考。志愿填报是重要决策，建议结合官方招生简章、学校官网及专业老师的建议综合判断。
+**Q：2018/2019 年 sp_name 为什么是空的？**
+A：API 历史数据限制，这两年没有返回 sp_name 字段。用 `spname` 字段替代，它在所有年份都有值。
