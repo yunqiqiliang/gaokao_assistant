@@ -36,6 +36,7 @@
 | **`dim_admission_regulation_parsed_v2`** | **招生章程避坑（身体/单科限制）** | **Top 1000** | ✅ **已完成** |
 | **`dim_discipline_assessment_5th`** | **第五轮学科评估** | **Top 300** | ✅ **已完成** |
 | `dim_school_enriched` | 高校增强信息（保研率/双一流） | Top 100 | ✅ 已完成 |
+| **`dim_major_category`** | **教育部专业分类映射（大类/门类）** | **全量** | ✅ **新增完成** |
 
 ---
 
@@ -54,7 +55,20 @@ WHERE f.province_id = '44' AND f.year = 2024
 ORDER BY f.min_score DESC;
 ```
 
-### 2. 就业与学科实力对比（深度画像）
+### 2. 按专业大类检索（新增能力）
+利用教育部《专业目录》，将所有细碎专业归纳为“大类”进行对比：
+```sql
+-- 查询“计算机类”所有专业的录取分
+SELECT s.name, f.spname, f.min_score, d.category_name
+FROM gaokao_assistant.fact_admission_history f
+JOIN gaokao_assistant.dim_school s ON CAST(f.school_id AS INT) = s.school_id
+JOIN gaokao_assistant.dim_major_category d ON f.spname = d.major_name
+WHERE f.province_id = '61' AND f.year = 2025
+  AND d.category_name = '计算机类'
+ORDER BY f.min_score DESC;
+```
+
+### 3. 就业与学科实力对比（深度画像）
 对比同类院校的就业质量和优势学科（结合新增维度表）：
 ```sql
 -- 对比 Top 100 高校在计算机专业的学科评估与就业薪资
