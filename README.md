@@ -37,6 +37,9 @@
 | **`dim_discipline_assessment_5th`** | **第五轮学科评估** | **Top 300** | ✅ **已完成** |
 | `dim_school_enriched` | 高校增强信息（保研率/双一流） | Top 100 | ✅ 已完成 |
 | **`dim_major_category`** | **教育部专业分类映射（大类/门类）** | **全量** | ✅ **新增完成** |
+| **`dim_school_campus`** | **高校校区分布与避坑指南** | **Top 100** | ✅ **新增完成** |
+| **`dim_major_transfer_policy`** | **转专业政策库（门槛/难度）** | **Top 100** | ✅ **新增完成** |
+| **`dim_sino_foreign_programs`** | **中外合作办学专区（学费/外方）** | **Top 100** | ✅ **新增完成** |
 
 ---
 
@@ -66,6 +69,32 @@ JOIN gaokao_assistant.dim_major_category d ON f.spname = d.major_name
 WHERE f.province_id = '61' AND f.year = 2025
   AND d.category_name = '计算机类'
 ORDER BY f.min_score DESC;
+```
+
+### 4. 避坑指南与“曲线救国”（新增能力）
+**4.1 校区避坑**：查询异地校区，避免高分低配：
+```sql
+-- 查询哈工大 (HIT) 的异地校区及分数差异提示
+SELECT c.campus_name, c.city_name, c.note
+FROM gaokao_assistant.dim_school_campus c
+WHERE c.school_id = 35;
+```
+
+**4.2 转专业政策**：想进名校再转专业？看这里：
+```sql
+-- 查询 Top 高校转专业难度
+SELECT school_name, difficulty_level, grade_requirement, restrictions
+FROM gaokao_assistant.dim_major_transfer_policy
+WHERE school_id IN (140, 31, 114);
+```
+
+**4.3 中外合作办学**：高学费换低分上名校：
+```sql
+-- 查询 QS Top 50 的中外合作项目
+SELECT s.name, p.program_name, p.partner_university, p.tuition_per_year
+FROM gaokao_assistant.dim_sino_foreign_programs p
+JOIN gaokao_assistant.dim_school s ON p.school_id = s.school_id
+WHERE p.partner_rank_qs <= 50;
 ```
 
 ### 3. 就业与学科实力对比（深度画像）
