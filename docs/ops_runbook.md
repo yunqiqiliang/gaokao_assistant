@@ -65,10 +65,65 @@ python3 scripts/repair.py
 
 ```bash
 python3 scripts/dim_school_scraper.py
+
+# 4. 采集投档线数据（含2025年）
+python3 scripts/fact_school_province_score_scraper.py
+
+# 5. 采集高校增强信息（保研率/双一流学科/校区）
+python3 scripts/dim_school_enrich_scraper.py
+
+# 6. 采集招生章程（Top 50）
+python3 scripts/dim_admission_regulation_scraper.py
 ```
 
 - 耗时：约 15 分钟（2784 所）
 - 会 DROP + CREATE 三张维度表，建表语句已内置完整注释
+
+---
+
+
+## 二、扩展数据采集（Phase 1 — 立即可做）
+
+### 步骤 4：采集投档线数据
+
+```bash
+python3 scripts/fact_school_province_score_scraper.py
+```
+
+- 数据源：gaokao.cn school/info.json 的 pro_type_min 字段
+- 含 2025 年数据，对 2026 志愿填报有直接参考价值
+- 耗时：约 5-10 分钟
+
+### 步骤 5：采集高校增强信息
+
+```bash
+python3 scripts/dim_school_enrich_scraper.py
+```
+
+- 采集内容：双一流学科列表、校区信息、保研率、联系方式、学校标签等
+- 耗时：约 5-10 分钟
+
+### 步骤 6：加载第五轮学科评估数据
+
+```bash
+# 先准备 CSV 文件：/tmp/discipline_assessment_5th.csv
+# 格式：school_id,discipline_name,assessment_level,confidence,source
+python3 scripts/dim_discipline_assessment_5th_loader.py
+```
+
+- 数据需从多源（各校官网/新闻报道）手工汇总
+- 脚本负责将 CSV 加载入库
+
+### 步骤 7：采集招生章程（Top 50）
+
+```bash
+pip install beautifulsoup4
+python3 scripts/dim_admission_regulation_scraper.py
+```
+
+- 采集内容：身体限制、单科要求、语种限制等关键约束
+- 先覆盖 Top 50 高校，后续扩展
+- 各高校网站结构不同，需要针对性适配
 
 ---
 
@@ -199,6 +254,15 @@ SELECT * FROM (
 ```bash
 # dim_school_scraper.py 会自动 DROP + CREATE，直接重跑即可
 python3 scripts/dim_school_scraper.py
+
+# 4. 采集投档线数据（含2025年）
+python3 scripts/fact_school_province_score_scraper.py
+
+# 5. 采集高校增强信息（保研率/双一流学科/校区）
+python3 scripts/dim_school_enrich_scraper.py
+
+# 6. 采集招生章程（Top 50）
+python3 scripts/dim_admission_regulation_scraper.py
 ```
 
 ### 6.4 重置断点（从头全量重采）
@@ -257,6 +321,15 @@ python3 scripts/repair.py --years 2025
 
 ```bash
 python3 scripts/dim_school_scraper.py
+
+# 4. 采集投档线数据（含2025年）
+python3 scripts/fact_school_province_score_scraper.py
+
+# 5. 采集高校增强信息（保研率/双一流学科/校区）
+python3 scripts/dim_school_enrich_scraper.py
+
+# 6. 采集招生章程（Top 50）
+python3 scripts/dim_admission_regulation_scraper.py
 # 最后一行输出：表注释已同步更新（含最新行数）
 ```
 
@@ -283,7 +356,16 @@ GROUP BY year ORDER BY year;
 export $(cat .env | xargs)
 python3 scripts/scraper.py --years 2025
 python3 scripts/repair.py --years 2025
-python3 scripts/dim_school_scraper.py   # 同时更新维度表和所有表注释
+python3 scripts/dim_school_scraper.py
+
+# 4. 采集投档线数据（含2025年）
+python3 scripts/fact_school_province_score_scraper.py
+
+# 5. 采集高校增强信息（保研率/双一流学科/校区）
+python3 scripts/dim_school_enrich_scraper.py
+
+# 6. 采集招生章程（Top 50）
+python3 scripts/dim_admission_regulation_scraper.py   # 同时更新维度表和所有表注释
 # 最后手动更新 README.md 的年份范围和总记录数
 ```
 
@@ -296,6 +378,15 @@ python3 scripts/dim_school_scraper.py   # 同时更新维度表和所有表注�
 | 全量采集（首次） | `python3 scripts/scraper.py` |
 | 断点续采 | `python3 scripts/scraper.py`（直接重跑，自动跳过已完成） |
 | 补全漏采 | `python3 scripts/repair.py` |
-| 更新维度表 | `python3 scripts/dim_school_scraper.py` |
+| 更新维度表 | `python3 scripts/dim_school_scraper.py
+
+# 4. 采集投档线数据（含2025年）
+python3 scripts/fact_school_province_score_scraper.py
+
+# 5. 采集高校增强信息（保研率/双一流学科/校区）
+python3 scripts/dim_school_enrich_scraper.py
+
+# 6. 采集招生章程（Top 50）
+python3 scripts/dim_admission_regulation_scraper.py` |
 | 补采新年份 | `python3 scripts/scraper.py --years 2025` |
 | 重置断点（从头全采） | `rm /tmp/gaokao_done_keys.txt && python3 scripts/scraper.py` |

@@ -184,6 +184,90 @@
 
 ---
 
+
+## 新增表（扩展计划 Phase 1）
+
+### fact_school_province_score
+
+数据来源：`gaokao.cn/school/{school_id}/info.json` → `pro_type_min` 字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `province_id` | STRING | 生源省份代码 |
+| `year` | INT | 招生年份（2023-2025） |
+| `type_code` | STRING | 招生类型编码：1=理科, 2=文科, 3=综合改革, 2073=物理类, 2074=历史类 |
+| `min_score` | INT | 最低投档分数 |
+| `data_year` | INT | 数据年份 |
+
+> **核心价值**：含 2025 年投档线数据，对 2026 年志愿填报有直接参考价值。
+
+### dim_dual_class
+
+数据来源：`gaokao.cn/school/{school_id}/info.json` → `dualclass` 字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `discipline_name` | STRING | 双一流建设学科名称 |
+
+### dim_campus
+
+数据来源：`gaokao.cn/school/{school_id}/info.json` → `fenxiao` 字段
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `campus_name` | STRING | 校区名称（校本部/分校区） |
+| `college_id` | STRING | 院系 ID |
+| `college_name` | STRING | 院系名称 |
+
+### dim_school_enriched
+
+数据来源：`gaokao.cn/school/{school_id}/info.json`
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `recommend_master_rate` | DOUBLE | 保研率（百分比） |
+| `phone` | STRING | 招生联系电话 |
+| `email` | STRING | 招生联系邮箱 |
+| `num_lab` | INT | 实验室数量 |
+| `num_library` | STRING | 图书馆藏书量 |
+| `content` | STRING | 学校简介 |
+| `label_list` | STRING | 学校标签 JSON（985/211/强基/C9 等） |
+| `xueke_rank_summary` | STRING | 学科评估汇总 JSON |
+
+### dim_admission_regulation
+
+数据来源：各高校本科招生网招生章程
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `regulation_year` | INT | 章程年份 |
+| `body_restriction` | STRING | 身体限制（视力/色觉/身高） |
+| `single_subject_req` | STRING | 单科成绩要求 |
+| `language_restriction` | STRING | 外语语种限制 |
+| `gender_ratio` | STRING | 男女比例要求 |
+| `other_restrictions` | STRING | 其他特殊要求 |
+| `source_url` | STRING | 章程原文链接 |
+
+### dim_discipline_assessment_5th
+
+数据来源：多源汇总（教育部第五轮学科评估 2022 年结果）
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `school_id` | INT | 高校 ID |
+| `discipline_name` | STRING | 学科名称 |
+| `assessment_level` | STRING | 评估等级（A+~C-） |
+| `confidence` | STRING | 置信度：confirmed/estimated |
+| `source` | STRING | 数据来源 |
+
+> **注意**：第五轮学科评估结果教育部未统一公布，数据来自多源交叉验证。
+
+
 ## 常用过滤条件速查
 
 ```sql
